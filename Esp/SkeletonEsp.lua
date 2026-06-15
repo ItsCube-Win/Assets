@@ -1,9 +1,7 @@
 --[[
-    Improved Universal Skeleton ESP
-    Fixed issues:
-    - No duplicate lines on toggle
-    - New players get ESP even if enabled before they join
-    - Global control methods
+    Hello! If you reading this
+    You can use it by ur self,
+    Have output in your ui 100%
 ]]
 
 local WAIT = task.wait
