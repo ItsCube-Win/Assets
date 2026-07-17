@@ -9,28 +9,31 @@ local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "Bin"
 screenGui.Parent = playerGui
 screenGui.ResetOnSpawn = false
-
 screenGui.DisplayOrder = 10
 screenGui.IgnoreGuiInset = true
 screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Global
 
-local BASE_WIDTH = 317
-local BASE_HEIGHT = 48
-local SCALE = 1.1  -- 110% вроде норм
+local watermark = Instance.new("ImageLabel")
+watermark.Size = UDim2.new(0, 465, 0, 82)
+watermark.Position = UDim2.new(0.39, 0, 0.037, 0)
+watermark.AnchorPoint = Vector2.new(0, 0.4)
+watermark.ScaleType = Enum.ScaleType.Fit
+watermark.BackgroundTransparency = 1
+watermark.ZIndex = 10
+watermark.Parent = screenGui
+-- это было долго но кайфы
+local gameImages = {
+    [142823291] = "rbxassetid://89417474649125",      -- Murder Mystery 2
+    [95082159892680] = "rbxassetid://109870431155558",  -- +1 Keyboard Escape
+    [537413528] = "rbxassetid://89239249828079", -- BABFT
+    [1488] = "rbxassetid://133777044310192", -- MMV -- бля где взять то айди
+    [1962086868] = "rbxassetid://123496994777895", -- Tower OF hell
+    [1] = "rbxassetid://110844669490628",     -- Ocean Dih ( test )
+}
 
-local function createImage(assetId, zIndex)
-    local img = Instance.new("ImageLabel")
-    img.Image = assetId
-    img.Size = UDim2.new(0, BASE_WIDTH * SCALE, 0, BASE_HEIGHT * SCALE)
-    img.Position = UDim2.new(0.5, 0, 0, 13)
-    img.AnchorPoint = Vector2.new(0.5, 0)
-    img.ScaleType = Enum.ScaleType.Fit
-    img.BackgroundTransparency = 1
-    img.ZIndex = zIndex
-    img.Parent = screenGui
-    return img
-end
+local DEFAULT_IMAGE = "rbxassetid://101471535225376"
 
--- ассеты фоток ( мб забанят )
-local img1 = createImage("rbxassetid://136690013401899", 0)
-local img2 = createImage("rbxassetid://122462078110645", 1)
+local placeId = game.PlaceId
+local imageId = gameImages[placeId] or DEFAULT_IMAGE
+watermark.Image = imageId
+print("Project Inf | WaterMark")
