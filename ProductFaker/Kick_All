@@ -1,0 +1,131 @@
+local Players = game:GetService("Players")
+local UIS = game:GetService("UserInputService")
+local player = Players.LocalPlayer or Players:WaitForChild("LocalPlayer")
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "KickAllUI"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = player:WaitForChild("PlayerGui")
+
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, 320, 0, 200)
+mainFrame.Position = UDim2.new(0.5, -160, 0.5, -100)
+mainFrame.BackgroundColor3 = Color3.fromRGB(22, 22, 30)
+mainFrame.BorderSizePixel = 0
+mainFrame.Parent = screenGui
+Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0, 16)
+
+local shadowStroke = Instance.new("UIStroke", mainFrame)
+shadowStroke.Thickness = 3
+shadowStroke.Color = Color3.fromRGB(0, 0, 0)
+shadowStroke.Transparency = 0.5
+shadowStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+
+local gradient = Instance.new("UIGradient", mainFrame)
+gradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(35, 35, 45)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(18, 18, 24))
+})
+
+local titleLabel = Instance.new("TextLabel", mainFrame)
+titleLabel.Size = UDim2.new(1, 0, 0, 50)
+titleLabel.Position = UDim2.new(0, 0, 0, 10)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text = "Kick All"
+titleLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.TextSize = 28
+titleLabel.TextXAlignment = Enum.TextXAlignment.Center
+
+local separator = Instance.new("Frame", mainFrame)
+separator.Size = UDim2.new(0.85, 0, 0, 2)
+separator.Position = UDim2.new(0.075, 0, 0, 58)
+separator.BackgroundColor3 = Color3.fromRGB(70, 70, 90)
+separator.BorderSizePixel = 0
+
+local statusLabel = Instance.new("TextLabel", mainFrame)
+statusLabel.Size = UDim2.new(1, -20, 0, 24)
+statusLabel.Position = UDim2.new(0, 10, 0, 66)
+statusLabel.BackgroundTransparency = 1
+statusLabel.Text = "Status: Ready"
+statusLabel.TextColor3 = Color3.fromRGB(200, 200, 220)
+statusLabel.Font = Enum.Font.Gotham
+statusLabel.TextSize = 15
+statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+local sendButton = Instance.new("TextButton", mainFrame)
+sendButton.Size = UDim2.new(0, 200, 0, 50)
+sendButton.Position = UDim2.new(0.5, -100, 0, 120)
+sendButton.BackgroundColor3 = Color3.fromRGB(200, 40, 40)
+sendButton.Text = "KICK"
+sendButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+sendButton.Font = Enum.Font.GothamBold
+sendButton.TextSize = 20
+sendButton.BorderSizePixel = 0
+Instance.new("UICorner", sendButton).CornerRadius = UDim.new(0, 12)
+local btnStroke = Instance.new("UIStroke", sendButton)
+btnStroke.Thickness = 2
+btnStroke.Color = Color3.fromRGB(255, 100, 100)
+btnStroke.Transparency = 0.3
+
+local function updateStatus(text, color)
+    statusLabel.Text = text
+    statusLabel.TextColor3 = color or Color3.fromRGB(200, 200, 220)
+end
+
+local function sendFakeSignal()
+    local id = 3557475287
+    local mps = game:GetService("MarketplaceService")
+    local ok, err = pcall(function()
+        mps:SignalPromptProductPurchaseFinished(player.UserId, id, true)
+    end)
+    if ok then
+        updateStatus("Kick signal sent! (" .. id .. ")", Color3.fromRGB(0, 255, 127))
+        sendButton.Text = "KICKED!"
+        sendButton.TextColor3 = Color3.fromRGB(0, 255, 127)
+        sendButton.BackgroundColor3 = Color3.fromRGB(30, 100, 30)
+        task.wait(1.5)
+        sendButton.Text = "KICK"
+        sendButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+        sendButton.BackgroundColor3 = Color3.fromRGB(200, 40, 40)
+    else
+        updateStatus("Error: " .. tostring(err), Color3.fromRGB(255, 80, 80))
+        sendButton.Text = "ERROR"
+        sendButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+        sendButton.BackgroundColor3 = Color3.fromRGB(100, 30, 30)
+        task.wait(1.5)
+        sendButton.Text = "KICK"
+        sendButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+        sendButton.BackgroundColor3 = Color3.fromRGB(200, 40, 40)
+    end
+end
+
+sendButton.MouseButton1Click:Connect(sendFakeSignal)
+
+sendButton.MouseEnter:Connect(function()
+    sendButton.BackgroundColor3 = Color3.fromRGB(230, 50, 50)
+end)
+sendButton.MouseLeave:Connect(function()
+    sendButton.BackgroundColor3 = Color3.fromRGB(200, 40, 40)
+end)
+
+local dragging, dragStart, startPos
+mainFrame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+        dragStart = input.Position
+        startPos = mainFrame.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+UIS.InputChanged:Connect(function(input)
+    if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+        local delta = input.Position - dragStart
+        mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X,
+                                       startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
