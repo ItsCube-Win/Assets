@@ -1,5 +1,5 @@
     --[[
-    Seluwia.xyz v0.4
+    Thunderstorm v0.4
     Tabs: Listener | Pinned | Settings
     Toggle: RightShift (PC) | S button (Mobile)
 ]]
@@ -13,16 +13,14 @@ local Lighting           = game:GetService("Lighting")
 local RunService         = game:GetService("RunService")
 local tost               = tostring
 
-local SETTINGS_FILE_V    = "seluwia_settings.json"
-local KEY_FILE           = "seluwia_key.txt"
-local PINNED_FILE        = "seluwia_pinned.json"
+local PINNED_FILE        = "thunderstorm_pinned.json"
 
 local player             = Players.LocalPlayer
 local playerGui          = player:WaitForChild("PlayerGui")
 local CoreGui            = game:GetService("CoreGui")
 
-if CoreGui:FindFirstChild("SeluwiaUI") then
-    CoreGui.SeluwiaUI:Destroy()
+if CoreGui:FindFirstChild("ThunderstormUI") then
+    CoreGui.ThunderstormUI:Destroy()
 end
 
 local Themes = {
@@ -85,7 +83,8 @@ local UI = {
     Labels = {
         SignalTypes = {},
         PinnedTypes = {},
-    }
+    },
+    ReopenGui = nil,
 }
 
 local State = {
@@ -93,19 +92,13 @@ local State = {
     vp              = (workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize) or Vector2.new(1920, 1080),
     autoSpeed       = 100,
     latestEvent     = nil,
-    showProductNames= false,
+    showProductNames= true,
     showSignalText  = true,
-    quickFireKey    = nil,
-    toggleKey       = Enum.KeyCode.RightShift,
-    fxEnabled       = false,
-    autoRunEnabled  = false,
-    showCurrentGame = true,
-    showRateMonitor = true,
     eventCount      = 0,
     pinCount        = 0,
     suppressCounter = 0,
     rateSmooth      = 0,
-    uiVisible       = true,
+    uiVisible       = false,
     isCollapsed     = false,
     activeTab       = nil,
     globalPinned    = {},
@@ -120,55 +113,6 @@ local FH  = State.isMobile and 46 or 50
 local TABH= State.isMobile and 36 or 34
 local BH  = State.isMobile and 36 or 28
 local FS, FM, FL = 13, (State.isMobile and 15 or 14), (State.isMobile and 17 or 16)
-
--- save/load extra settings
-local function saveSeluwiaSettings()
-    pcall(function()
-        if writefile then
-            local data = {
-                showNames     = State.showProductNames,
-                showSignalText= State.showSignalText,
-                quickFireKey  = State.quickFireKey and State.quickFireKey.Name or nil,
-                toggleKey     = State.toggleKey and State.toggleKey.Name or nil,
-                theme         = currentTheme,
-                fxEnabled     = State.fxEnabled,
-                autoRunEnabled= State.autoRunEnabled,
-                showCurrentGame= State.showCurrentGame,
-                showRateMonitor= State.showRateMonitor,
-            }
-            writefile(SETTINGS_FILE_V, HS:JSONEncode(data))
-        end
-    end)
-end
-
-local function loadSeluwiaSettings()
-    pcall(function()
-        if isfile and isfile(SETTINGS_FILE_V) then
-            local d = HS:JSONDecode(readfile(SETTINGS_FILE_V))
-            if d then
-                State.showProductNames = d.showNames == true
-                State.showSignalText   = d.showSignalText ~= false
-                State.fxEnabled        = d.fxEnabled == true
-                State.autoRunEnabled   = d.autoRunEnabled == true
-                State.showCurrentGame  = d.showCurrentGame ~= false
-                State.showRateMonitor  = d.showRateMonitor ~= false
-                if d.theme == "Dark" or d.theme == "Light" then
-                    currentTheme = d.theme
-                    for k, v in pairs(Themes[currentTheme]) do
-                        C[k] = v
-                    end
-                end
-                if d.quickFireKey then
-                    pcall(function() State.quickFireKey = Enum.KeyCode[d.quickFireKey] end)
-                end
-                if d.toggleKey then
-                    pcall(function() State.toggleKey = Enum.KeyCode[d.toggleKey] end)
-                end
-            end
-        end
-    end)
-end
-loadSeluwiaSettings()
 
 -- resolve product name from id
 local nameCache = {}
@@ -259,10 +203,7 @@ local function makeDraggable(frame, handle)
                 startPos.X.Scale, startPos.X.Offset + d.X,
                 startPos.Y.Scale, startPos.Y.Offset + d.Y
             )
-            if UI.GameInfo then
-                UI.GameInfo.Position = UDim2.new(0, frame.Position.X.Offset + frame.Size.X.Offset + 10, 0, frame.Position.Y.Offset)
-            end
-        end
+                    end
     end)
     UIS.InputEnded:Connect(function(inp)
         if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
@@ -405,7 +346,7 @@ do
 
     local function fxCreateTimeGui()
         if S.timeGui then S.timeGui:Destroy() end
-        S.timeGui = Instance.new("ScreenGui"); S.timeGui.Name = "SeluwiaFxTime"; S.timeGui.ResetOnSpawn = false; S.timeGui.DisplayOrder = 10; S.timeGui.Parent = playerGui
+        S.timeGui = Instance.new("ScreenGui"); S.timeGui.Name = "ThunderstormFxTime"; S.timeGui.ResetOnSpawn = false; S.timeGui.DisplayOrder = 10; S.timeGui.Parent = playerGui
         local c = Instance.new("Frame"); c.Size = UDim2.new(0, 200, 0, 70); c.Position = UDim2.new(0, 20, 1, -90); c.BackgroundTransparency = 1; c.Parent = S.timeGui
         local d = Instance.new("TextLabel"); d.Name = "DateLabel"; d.Size = UDim2.new(1, 0, 0, 20); d.BackgroundTransparency = 1; d.TextColor3 = Color3.fromRGB(220,220,255); d.TextSize = 16; d.Font = Enum.Font.GothamMedium; d.TextXAlignment = Enum.TextXAlignment.Left; d.Parent = c
         local t = Instance.new("TextLabel"); t.Name = "TimeLabel"; t.Size = UDim2.new(1, 0, 0, 40); t.Position = UDim2.new(0,0,0,22); t.BackgroundTransparency = 1; t.TextColor3 = Color3.fromRGB(255,255,255); t.TextSize = 40; t.Font = Enum.Font.GothamBold; t.TextXAlignment = Enum.TextXAlignment.Left; t.Parent = c
@@ -422,7 +363,7 @@ do
 
     local function fxCreateFpsPingGui()
         if S.fpsPingGui then S.fpsPingGui:Destroy() end
-        S.fpsPingGui = Instance.new("ScreenGui"); S.fpsPingGui.Name = "SeluwiaFxNet"; S.fpsPingGui.ResetOnSpawn = false; S.fpsPingGui.DisplayOrder = 10; S.fpsPingGui.Parent = playerGui
+        S.fpsPingGui = Instance.new("ScreenGui"); S.fpsPingGui.Name = "ThunderstormFxNet"; S.fpsPingGui.ResetOnSpawn = false; S.fpsPingGui.DisplayOrder = 10; S.fpsPingGui.Parent = playerGui
         local c = Instance.new("Frame"); c.Size = UDim2.new(0, 170, 0, 50); c.Position = UDim2.new(1, -20, 1, -30); c.AnchorPoint = Vector2.new(1,1); c.BackgroundTransparency = 1; c.Parent = S.fpsPingGui
         local f = Instance.new("TextLabel"); f.Name = "F"; f.Size = UDim2.new(1,0,0,24); f.BackgroundTransparency = 1; f.TextColor3 = Color3.fromRGB(255,255,255); f.TextSize = 18; f.Font = Enum.Font.GothamBold; f.TextXAlignment = Enum.TextXAlignment.Right; f.Parent = c
         local p = Instance.new("TextLabel"); p.Name = "P"; p.Size = UDim2.new(1,0,0,24); p.Position = UDim2.new(0,0,0,26); p.BackgroundTransparency = 1; p.TextColor3 = Color3.fromRGB(255,255,255); p.TextSize = 18; p.Font = Enum.Font.GothamBold; p.TextXAlignment = Enum.TextXAlignment.Right; p.Parent = c
@@ -438,7 +379,7 @@ do
 
     local function fxCreateDust()
         if S.dustGui then S.dustGui:Destroy() end
-        S.dustGui = Instance.new("ScreenGui"); S.dustGui.Name = "SeluwiaFxDust"; S.dustGui.ResetOnSpawn = false; S.dustGui.DisplayOrder = 5; S.dustGui.Parent = playerGui
+        S.dustGui = Instance.new("ScreenGui"); S.dustGui.Name = "ThunderstormFxDust"; S.dustGui.ResetOnSpawn = false; S.dustGui.DisplayOrder = 5; S.dustGui.Parent = playerGui
         S.dustContainer = Instance.new("Frame"); S.dustContainer.Size = UDim2.new(1,0,1,0); S.dustContainer.BackgroundTransparency = 1; S.dustContainer.Parent = S.dustGui
         S.dustLoopRunning = true
         task.spawn(function()
@@ -489,11 +430,11 @@ end
 
 -- SCREEN GUI
 local sg = Instance.new("ScreenGui")
-sg.Name            = "SeluwiaUI"
+sg.Name            = "ThunderstormUI"
 sg.ResetOnSpawn    = false
 sg.ZIndexBehavior  = Enum.ZIndexBehavior.Global
 sg.IgnoreGuiInset  = true
-sg.Parent          = CoreGui
+sg.Parent          = playerGui
 
 do
     local lf = Instance.new("Frame")
@@ -519,7 +460,7 @@ do
     llogo.Size               = UDim2.new(1, 0, 0, 60)
     llogo.Position           = UDim2.new(0, 0, 0.30, 0)
     llogo.BackgroundTransparency = 1
-    llogo.Text               = "Seluwia.xyz"
+    llogo.Text               = "Thunderstorm"
     llogo.TextColor3         = C.accent
     llogo.TextSize           = 42
     llogo.Font               = Enum.Font.GothamBold
@@ -584,7 +525,7 @@ do
     lstat.Size               = UDim2.new(1, 0, 0, 20)
     lstat.Position           = UDim2.new(0, 0, 0.75, 10)
     lstat.BackgroundTransparency = 1
-    lstat.Text               = "Enter Key..."
+    lstat.Text               = "Loading..."
     lstat.TextColor3         = C.textMuted
     lstat.TextSize           = 13
     lstat.Font               = Enum.Font.Gotham
@@ -592,80 +533,8 @@ do
     lstat.ZIndex             = 101
     lstat.Parent           = lf
 
-    local ldiscord = Instance.new("TextButton")
-    ldiscord.Size               = UDim2.new(0, 80, 0, 24)
-    ldiscord.Position           = UDim2.new(1, -90, 1, -30)
-    ldiscord.BackgroundTransparency = 1
-    ldiscord.Text               = ".gg/seluwia"
-    ldiscord.TextColor3         = C.textDim
-    ldiscord.TextSize           = 13
-    ldiscord.Font               = Enum.Font.Gotham
-    ldiscord.TextXAlignment     = Enum.TextXAlignment.Right
-    ldiscord.ZIndex             = 101
-    ldiscord.Parent             = lf
-
-    ldiscord.MouseButton1Click:Connect(function()
-        pcall(setclipboard, "https://discord.gg/seluwia")
-        ldiscord.Text = "Copied!"
-        ldiscord.TextColor3 = C.accent
-        task.wait(2)
-        ldiscord.Text = ".gg/seluwia"
-        ldiscord.TextColor3 = C.textDim
-    end)
-
-    local kf = Instance.new("Frame")
-    kf.Size             = UDim2.new(0, 320, 0, 42)
-    kf.Position         = UDim2.new(0.5, -160, 0.6, 0)
-    kf.BackgroundColor3 = C.surfaceHi
-    kf.BorderSizePixel  = 0
-    kf.ZIndex           = 105
-    kf.Visible          = true
-    kf.Parent           = lf
-    corner(kf, 8)
-    stroke(kf, C.border, 1)
-
-    local kb = Instance.new("TextBox")
-    kb.Size             = UDim2.new(1, -90, 1, 0)
-    kb.Position         = UDim2.new(0, 12, 0, 0)
-    kb.BackgroundTransparency = 1
-    kb.PlaceholderText  = "Enter Key..."
-    kb.PlaceholderColor3 = C.textDim
-    kb.Text             = ""
-    pcall(function()
-        if isfile and isfile(KEY_FILE) then kb.Text = string.gsub(readfile(KEY_FILE) or "", "%s+", "") end
-    end)
-    kb.TextColor3       = C.text
-    kb.TextSize         = 13
-    kb.Font             = Enum.Font.Gotham
-    kb.TextXAlignment   = Enum.TextXAlignment.Left
-    kb.ClearTextOnFocus = false
-    kb.ZIndex           = 106
-    kb.Parent           = kf
-
-    local kbtn = Instance.new("TextButton")
-    kbtn.Size             = UDim2.new(0, 75, 1, -10)
-    kbtn.Position         = UDim2.new(1, -80, 0, 5)
-    kbtn.BackgroundColor3 = C.bg
-    kbtn.Text             = "Enter"
-    kbtn.TextColor3       = C.accent
-    kbtn.TextSize         = 12
-    kbtn.Font             = Enum.Font.Gotham
-    kbtn.BorderSizePixel  = 0
-    kbtn.AutoButtonColor  = false
-    kbtn.ZIndex           = 106
-    kbtn.Parent           = kf
-    corner(kbtn, 6)
-    stroke(kbtn, C.accentDim, 1)
-
-    kb:GetPropertyChangedSignal("Text"):Connect(function()
-        local ts = game:GetService("TextService")
-        local size = ts:GetTextSize(kb.Text, kb.TextSize, kb.Font, Vector2.new(1000, 42))
-        local newWidth = math.clamp(size.X + 110, 320, 580)
-        tw(kf, TIF, {Size = UDim2.new(0, newWidth, 0, 42), Position = UDim2.new(0.5, -newWidth/2, 0.6, 0)})
-    end)
 
     local function startLoading()
-        kf.Visible = false
         pbg.Visible = true; lstat.Visible = true
         for _, d in ipairs(dots) do d.Visible = true end
         local _e,_ls,_f = 0,0,false
@@ -703,21 +572,10 @@ do
         end)
     end
 
-    local VALID_KEY = "cube"
-    local function onVerify()
-        if string.gsub(kb.Text, "%s+", "") == VALID_KEY then
-            kb.TextEditable = false
-            kbtn.Text = "Checking..."
-            task.wait(1)
-            pcall(function() if writefile then writefile(KEY_FILE, VALID_KEY) end end)
-            startLoading()
-        else
-            kbtn.Text = "Invalid!"; task.wait(1); kbtn.Text = "Enter"
-        end
-    end
-    kbtn.MouseButton1Click:Connect(onVerify)
-    kb.FocusLost:Connect(function(e) if e then onVerify() end end)
-    if kb.Text ~= "" then task.delay(0.25, onVerify) end
+    task.delay(0, function()
+        startLoading()
+    end)
+
 end
 
 -- MAIN PANEL
@@ -829,9 +687,6 @@ do
         if resizing and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
             local d = i.Position - rs
             UI.Main.Size = UDim2.new(0, math.max(PW, ssz.X + d.X), 0, math.max(PH, ssz.Y + d.Y))
-            if UI.GameInfo then
-                UI.GameInfo.Position = UDim2.new(0, UI.Main.Position.X.Offset + UI.Main.Size.X.Offset + 10, 0, UI.Main.Position.Y.Offset)
-            end
         end
     end)
     UIS.InputEnded:Connect(function(i)
@@ -900,7 +755,7 @@ do
     local titleText = Instance.new("TextLabel")
     titleText.Size               = UDim2.new(1, 0, 1, 0)
     titleText.BackgroundTransparency = 1
-    titleText.Text               = "Seluwia.xyz"
+    titleText.Text               = "Thunderstorm"
     titleText.TextColor3         = C.text
     titleText.TextXAlignment     = Enum.TextXAlignment.Center
     titleText.TextSize           = 22
@@ -925,43 +780,8 @@ do
     UI.CloseBtnStroke = stroke(closeBtn, C.border, 1)
     UI.CloseBtn = closeBtn
 
-    closeBtn.MouseButton1Click:Connect(function() State.uiVisible = false; UI.Main.Visible = false end)
+    -- Close button state is handled later by hideGui to keep reopen button logic consistent.
 
-    local minimizeBtn = Instance.new("TextButton")
-    minimizeBtn.Size             = UDim2.new(0, 28, 0, 28)
-    minimizeBtn.Position         = UDim2.new(1, -70, 0.5, -14)
-    minimizeBtn.BackgroundColor3 = C.surfaceHi
-    minimizeBtn.Text             = "\226\128\148"
-    minimizeBtn.TextColor3       = C.textMuted
-    minimizeBtn.TextSize         = 16
-    minimizeBtn.Font             = Enum.Font.GothamBold
-    minimizeBtn.BorderSizePixel  = 0
-    minimizeBtn.AutoButtonColor  = false
-    minimizeBtn.ZIndex           = 403
-    minimizeBtn.Parent           = UI.TitleBar
-    corner(minimizeBtn, 8)
-    UI.MinimizeBtnStroke = stroke(minimizeBtn, C.border, 1)
-    UI.MinimizeBtn = minimizeBtn
-
-    minimizeBtn.MouseButton1Click:Connect(function()
-        State.isCollapsed = not State.isCollapsed
-        minimizeBtn.Text = State.isCollapsed and "+" or "\226\128\148"
-        if State.isCollapsed then
-            tw(UI.Main, TIF, {Size = UDim2.new(0, PW, 0, TH)})
-            tw(UI.GameInfo, TIF, {Size = UDim2.new(0, 280, 0, 38)})
-        tw(gameInfoImage, TIF, {Position = UDim2.new(0, 10, 0, 0), Size = UDim2.new(0, 38, 0, 38)})
-        tw(gameInfoName, TIF, {Position = UDim2.new(0, 52, 0, 0), Size = UDim2.new(1, -56, 0, 38)})
-        tw(gameMetaPanel, TIF, {Size = UDim2.new(1, -12, 0, 0)})
-        if State.fxEnabled then setFxEnabled(false, false) end
-        else
-            tw(UI.Main, TIF, {Size = UDim2.new(0, PW, 0, PH)})
-            tw(UI.GameInfo, TIF, {Size = UDim2.new(0, 280, 0, 180)})
-        tw(gameInfoImage, TIF, {Position = UDim2.new(0, 10, 0, 48), Size = UDim2.new(0, 78, 0, 78)})
-        tw(gameInfoName, TIF, {Position = UDim2.new(0, 96, 0, 48), Size = UDim2.new(1, -104, 0, 78)})
-        tw(gameMetaPanel, TIF, {Size = UDim2.new(1, -12, 0, 44)})
-        if State.fxEnabled then setFxEnabled(true, false) end
-        end
-    end)
 end
 
 -- Stop / Clear buttons
@@ -1462,7 +1282,7 @@ local function addLog(label, id, sigType)
     typeLbl.TextSize         = 10
     typeLbl.Font             = Enum.Font.GothamBold
     typeLbl.TextXAlignment   = Enum.TextXAlignment.Left
-    typeLbl.Visible          = State.showSignalText
+    typeLbl.Visible          = true
     typeLbl.Parent           = entry
     table.insert(UI.Labels.SignalTypes, typeLbl)
 
@@ -1858,7 +1678,7 @@ addPinnedEntry = function(id, sigType, displayName, skipSave)
     ptype.TextSize           = 10
     ptype.Font               = Enum.Font.GothamBold
     ptype.TextXAlignment     = Enum.TextXAlignment.Left
-    ptype.Visible            = State.showSignalText
+    ptype.Visible            = true
     ptype.Parent             = pe
     table.insert(UI.Labels.PinnedTypes, ptype)
 
@@ -2033,26 +1853,6 @@ addPinnedEntry = function(id, sigType, displayName, skipSave)
 end
 UI.AddPinnedEntry = addPinnedEntry
 
-local function applyTheme()
-    for k, v in pairs(Themes[currentTheme]) do C[k] = v end
-    panel.BackgroundColor3     = C.bg
-    -- остальное не используется, оставлено как есть
-end
-
-local isCollapsed = false
-local function toggleCollapse()
-    isCollapsed = not isCollapsed
-    minimizeBtn.Text = isCollapsed and "+" or "\226\128\148"
-    if isCollapsed then
-        tw(panel, TIF, {Size = UDim2.new(0, 600, 0, TH)})
-        tw(gameInfoPanel, TIF, {Size = UDim2.new(0, 280, 0, 38)})
-    else
-        tw(panel, TIF, {Size = UDim2.new(0, 600, 0, PH)})
-        tw(gameInfoPanel, TIF, {Size = UDim2.new(0, 280, 0, 180)})
-    end
-end
--- toggleCollapse нигде не вызывается, оставлена для возможного использования
-
 -- SETTINGS TAB
 local settingsPage = addTab("Settings", "rbxassetid://6031280882", 3)
 
@@ -2157,178 +1957,71 @@ do
         end
     end)
 
-    -- Keybind
-    local kbRow = mkRow("Toggle Keybind", "Click to rebind. Hide/show UI.", 2)
-    local kbBtn = Instance.new("TextButton")
-    kbBtn.Size = UDim2.new(0, 100, 0, 30)
-    kbBtn.Position = UDim2.new(1, -116, 0.5, -15)
-    kbBtn.BackgroundColor3 = C.surfaceHi
-    kbBtn.Text = State.toggleKey and State.toggleKey.Name or "RightShift"
-    kbBtn.TextColor3 = C.text
-    kbBtn.Font = Enum.Font.GothamBold
-    kbBtn.Parent = kbRow
-    corner(kbBtn, 6)
-    stroke(kbBtn, C.border, 1)
-    local listening = false
-    kbBtn.MouseButton1Click:Connect(function()
-        if listening then return end
-        listening = true
-        kbBtn.Text = "..."
-        local conn
-        conn = UIS.InputBegan:Connect(function(inp)
-            if inp.UserInputType == Enum.UserInputType.Keyboard then
-                State.toggleKey = inp.KeyCode
-                kbBtn.Text = State.toggleKey.Name
-                listening = false
-                saveSeluwiaSettings()
-                conn:Disconnect()
-            end
-        end)
-    end)
-
-    -- Quick Fire
-    local qfRow = mkRow("Quick Fire Hotkey", "Fires the latest recorded event.", 3)
-    local qfBtn = Instance.new("TextButton")
-    qfBtn.Size = UDim2.new(0, 100, 0, 30)
-    qfBtn.Position = UDim2.new(1, -116, 0.5, -15)
-    qfBtn.BackgroundColor3 = C.surfaceHi
-    qfBtn.Text = State.quickFireKey and State.quickFireKey.Name or "None"
-    qfBtn.TextColor3 = C.text
-    qfBtn.Font = Enum.Font.GothamBold
-    qfBtn.Parent = qfRow
-    corner(qfBtn, 6)
-    stroke(qfBtn, C.border, 1)
-    local qfListening = false
-    qfBtn.MouseButton1Click:Connect(function()
-        if qfListening then return end
-        qfListening = true
-        qfBtn.Text = "..."
-        local conn
-        conn = UIS.InputBegan:Connect(function(inp)
-            if inp.UserInputType == Enum.UserInputType.Keyboard then
-                State.quickFireKey = inp.KeyCode
-                qfBtn.Text = State.quickFireKey.Name
-                qfListening = false
-                saveSeluwiaSettings()
-                conn:Disconnect()
-            end
-        end)
-    end)
-
-    local function mkToggle(title, desc, stateKey, order, onUpdate)
-        local row = mkRow(title, desc, order)
-        local btn = Instance.new("TextButton")
-        btn.Size = UDim2.new(0, 60, 0, 30)
-        btn.Position = UDim2.new(1, -76, 0.5, -15)
-        btn.BackgroundColor3 = State[stateKey] and C.greenDim or C.surfaceHi
-        btn.Text = State[stateKey] and "ON" or "OFF"
-        btn.TextColor3 = State[stateKey] and C.green or C.textMuted
-        btn.Font = Enum.Font.GothamBold
-        btn.Parent = row
-        corner(btn, 6)
-        stroke(btn, C.border, 1)
-        btn.MouseButton1Click:Connect(function()
-            State[stateKey] = not State[stateKey]
-            btn.Text = State[stateKey] and "ON" or "OFF"
-            btn.TextColor3 = State[stateKey] and C.green or C.textMuted
-            tw(btn, TIF, {BackgroundColor3 = State[stateKey] and C.greenDim or C.surfaceHi})
-            if onUpdate then onUpdate(State[stateKey]) end
-            saveSeluwiaSettings()
-        end)
-        return btn
-    end
-
-    mkToggle("Show Product Names", "Show name instead of ID (e.g. 100 Coins)", "showProductNames", 4, refreshAllNameLabels)
-    mkToggle("Signal Labels", "Show 'PRODUCT', 'GAMEPASS' text labels.", "showSignalText", 5, function(on)
-        for _, l in ipairs(UI.Labels.SignalTypes) do l.Visible = on end
-        for _, l in ipairs(UI.Labels.PinnedTypes) do l.Visible = on end
-    end)
-    mkToggle("Background VFX", "Stars, parallax, ambient sound, blur.", "fxEnabled", 6, setFxEnabled)
-    mkToggle("Show Current Game", "Side window showing place information.", "showCurrentGame", 7, function(on)
-        if UI.GameInfo then UI.GameInfo.Visible = (State.uiVisible and on) end
-    end)
-    mkToggle("Rate Monitor", "Signals per second indicator.", "showRateMonitor", 8, function(on)
-        if UI.RateLabel then UI.RateLabel.Visible = on end
-    end)
-
-    local themeRow = mkRow("Theme", "Dark or Light mode", 9)
-    local themeBtn = Instance.new("TextButton")
-    themeBtn.Size = UDim2.new(0, 100, 0, 30)
-    themeBtn.Position = UDim2.new(1, -116, 0.5, -15)
-    themeBtn.BackgroundColor3 = C.surfaceHi
-    themeBtn.Text = currentTheme
-    themeBtn.TextColor3 = C.text
-    themeBtn.Font = Enum.Font.GothamBold
-    themeBtn.Parent = themeRow
-    corner(themeBtn, 6)
-    stroke(themeBtn, C.border, 1)
-    themeBtn.MouseButton1Click:Connect(function()
-        currentTheme = currentTheme == "Dark" and "Light" or "Dark"
-        for k, v in pairs(Themes[currentTheme]) do
-            C[k] = v
-        end
-        panel.BackgroundColor3 = C.bg
-        pst.Color = Color3.new(C.bg.R, C.bg.G, C.bg.B)
-        grad.Color = ColorSequence.new{
-            ColorSequenceKeypoint.new(0, Color3.new(C.bg.R, C.bg.G, C.bg.B)),
-            ColorSequenceKeypoint.new(1, Color3.new(C.border.R, C.border.G, C.border.B))
-        }
-        themeBtn.Text = currentTheme
-        saveSeluwiaSettings()
-    end)
-
-    local hubRow = mkRow("Go to the game hub", "If the place supports teleporting, you can teleport to the hub.", 10)
-    local hubBtn = Instance.new("TextButton")
-    hubBtn.Size = UDim2.new(0, 100, 0, 30)
-    hubBtn.Position = UDim2.new(1, -116, 0.5, -15)
-    hubBtn.BackgroundColor3 = C.surfaceHi
-    hubBtn.Text = "Teleport"
-    hubBtn.TextColor3 = C.text
-    hubBtn.Font = Enum.Font.GothamBold
-    hubBtn.Parent = hubRow
-    corner(hubBtn, 6)
-    stroke(hubBtn, C.border, 1)
-    hubBtn.MouseButton1Click:Connect(function()
-        UI.ShowToast("Teleporting to hub...", C.accent)
-    end)
 end
 
 -- UI CONTROL
 do
+    local function createReopenButton()
+        if UI.ReopenBtn and UI.ReopenBtn.Parent then return UI.ReopenBtn end
+        if not UI.ReopenGui then
+            UI.ReopenGui = Instance.new("ScreenGui")
+            UI.ReopenGui.Name = "ThunderstormReopenGui"
+            UI.ReopenGui.ResetOnSpawn = false
+            UI.ReopenGui.ZIndexBehavior = Enum.ZIndexBehavior.Global
+            UI.ReopenGui.IgnoreGuiInset = true
+            UI.ReopenGui.Parent = playerGui
+        end
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.new(0, 80, 0, 80)
+        btn.Position = UDim2.new(0.5, 0, 0.5, 0)
+        btn.AnchorPoint = Vector2.new(0.5, 0.5)
+        btn.BackgroundColor3 = C.surface
+        btn.Text = "S"
+        btn.TextColor3 = C.accent
+        btn.TextSize = 26
+        btn.Font = Enum.Font.GothamBold
+        btn.BorderSizePixel = 0
+        btn.AutoButtonColor = false
+        btn.ZIndex = 1000
+        btn.Parent = UI.ReopenGui
+        btn.Visible = false
+        corner(btn, 18)
+        stroke(btn, C.accentDim, 1.5)
+        makeDraggable(btn)
+        btn.MouseButton1Click:Connect(function()
+            UI.ShowGui()
+        end)
+        UI.ReopenBtn = btn
+        return btn
+    end
+
     local function showGui()
         sg.Enabled = true; State.uiVisible = true
-        if UI.GameInfo then UI.GameInfo.Visible = (State.uiVisible and State.showCurrentGame) end
+        if UI.Main then UI.Main.Visible = true end
         if UI.ReopenBtn then UI.ReopenBtn.Visible = false end
     end
     local function hideGui()
         sg.Enabled = false; State.uiVisible = false
-        if UI.GameInfo then UI.GameInfo.Visible = false end
-        if State.isMobile then
-            if not UI.ReopenBtn or not UI.ReopenBtn.Parent then
-                local btn = Instance.new("TextButton")
-                btn.Size = UDim2.new(0, 52, 0, 52); btn.Position = UDim2.new(1, -70, 1, -70)
-                btn.AnchorPoint = Vector2.new(1, 1); btn.BackgroundColor3 = C.surface
-                btn.Text = "S"; btn.TextColor3 = C.accent; btn.TextSize = 22
-                btn.Font = Enum.Font.GothamBold; btn.Parent = CoreGui
-                corner(btn, 999); stroke(btn, C.accentDim, 1.5)
-                btn.MouseButton1Click:Connect(showGui)
-                UI.ReopenBtn = btn
-            else UI.ReopenBtn.Visible = true end
-        end
+        if UI.Main then UI.Main.Visible = false end
+        local btn = createReopenButton()
+        btn.Visible = true
     end
     UI.HideGui = hideGui
     UI.ShowGui = showGui
 
-    UI.CloseBtn.MouseButton1Click:Connect(hideGui)
+    if UI.CloseBtn then
+        UI.CloseBtn.MouseButton1Click:Connect(hideGui)
+    end
+
+    createReopenButton()
+
+    if State.uiVisible then
+        sg.Enabled = false
+    end
 
     table.insert(UI.Conns, UIS.InputBegan:Connect(function(inp, gpe)
         if inp.UserInputType ~= Enum.UserInputType.Keyboard or gpe then return end
-        if inp.KeyCode == State.toggleKey then
-            if State.uiVisible then hideGui() else showGui() end
-        elseif State.quickFireKey and inp.KeyCode == State.quickFireKey and State.latestEvent then
-            UI.FireFakeSignal(State.latestEvent.sigType, State.latestEvent.id)
-            UI.ShowToast("Fired " .. tost(State.latestEvent.id), C.accent)
-        end
+        -- UI open/close is controlled by the draggable button only.
     end))
 
     local function hook(signal, label, sigType)
@@ -2353,6 +2046,5 @@ do
         end
     end
 
-    print("[Seluwia.xyz] v0.4 loaded  |  discord.gg/seluwia")
+    print("[Thunderstorm] v0.5 loaded")
 end
-print("discord.gg/seluwia")
