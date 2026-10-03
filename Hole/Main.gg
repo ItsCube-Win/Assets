@@ -1,0 +1,806 @@
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+
+local LocalPlayer = Players.LocalPlayer
+local MyUserId = LocalPlayer.UserId
+
+local remotes = ReplicatedStorage:WaitForChild("Remotes", 10)
+local ThrowItem = remotes and remotes:WaitForChild("ThrowItem", 10)
+
+-- ==================== КОНФИГ ====================
+local DEFAULT_SPEED = 75
+local DEFAULT_DEPTH = 60
+local SILENT_MODE = true
+local AUTO_DELAY = 0.6
+local ITEM_STOP_DIST = 10       -- за N studs до предмета отключаем флай
+local BASE_STOP_DIST = 3        -- за N studs до HoleHitbox
+local WALK_SPEED = 16
+local LAND_WAIT = 0.6           -- ждать падения на землю
+local WALK_TIMEOUT = 4          -- макс время ходьбы
+
+-- ==================== ХЕЛПЕРЫ ====================
+local function getHRP()
+    local c = LocalPlayer.Character
+    return c and c:FindFirstChild("HumanoidRootPart")
+end
+
+local function getHum()
+    local c = LocalPlayer.Character
+    return c and c:FindFirstChildOfClass("Humanoid")
+end
+
+local function getChar() return LocalPlayer.Character end
+
+local function isCarrying()
+    if LocalPlayer:GetAttribute("IsCarrying") == true then return true end
+    local c = LocalPlayer.Character
+    if c and c:GetAttribute("IsCarrying") == true then return true end
+    local ci = LocalPlayer:FindFirstChild("CarryingItem")
+    return ci and ci:IsA("ObjectValue") and ci.Value ~= nil
+end
+
+local function getStrength()
+    local s = LocalPlayer:GetAttribute("Strength")
+    if typeof(s) ~= "number" then return 0 end
+    return s
+end
+
+local function findMyBase()
+    local map0 = workspace:FindFirstChild("0Map")
+    if not map0 then return nil end
+    for _, folder in ipairs(map0:GetChildren()) do
+        if folder.Name:lower():find("base") then
+            for _, base in ipairs(folder:GetChildren()) do
+                if base:GetAttribute("OwnerUserId") == MyUserId then
+                    return base
+                end
+            end
+        end
+    end
+    return nil
+end
+
+local function findHoleHitbox(base)
+    if not base then return nil end
+    return base:FindFirstChild("HoleHitbox")
+end
+
+local function findPickupPrompt(item)
+    for _, obj in ipairs(item:GetDescendants()) do
+        if obj:IsA("ProximityPrompt") and obj.Name == "PickupPrompt" then
+            return obj
+        end
+    end
+    for _, obj in ipairs(item:GetDescendants()) do
+        if obj:IsA("ProximityPrompt") then return obj end
+    end
+    return nil
+end
+
+local function getItemPosition(item)
+    local prompt = findPickupPrompt(item)
+    if prompt and prompt.Parent then
+        local pp = prompt.Parent
+        if pp:IsA("BasePart") then return pp.Position end
+        if pp:IsA("Model") then
+            local ok, pivot = pcall(function() return pp:GetPivot().Position end)
+            if ok then return pivot end
+        end
+    end
+    if item:IsA("Model") then
+        local ok, pivot = pcall(function() return item:GetPivot().Position end)
+        if ok then return pivot end
+    end
+    if item:IsA("BasePart") then return item.Position end
+    return nil
+end
+
+local function scanItems()
+    local folder = workspace:FindFirstChild("SpawnedItems")
+    if not folder then return {} end
+    local hrp = getHRP()
+    if not hrp then return {} end
+    local strength = getStrength()
+    local myPos = hrp.Position
+    local result = {}
+    for _, item in ipairs(folder:GetChildren()) do
+        local weight = item:GetAttribute("Weight")
+        if typeof(weight) == "number" and weight <= strength then
+            local pos = getItemPosition(item)
+            if pos then
+                table.insert(result, {
+                    model = item, pos = pos,
+                    dist = (pos - myPos).Magnitude, weight = weight,
+                })
+            end
+        end
+    end
+    return result
+end
+
+local function getGuiParent()
+    if gethui then
+        local ok, h = pcall(gethui)
+        if ok and h then return h end
+    end
+    return LocalPlayer:WaitForChild("PlayerGui")
+end
+
+-- ==================== NOCLIP ====================
+local noclipEnabled = true
+RunService.Stepped:Connect(function()
+    if not noclipEnabled then return end
+    local char = getChar()
+    if not char then return end
+    for _, part in ipairs(char:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.CanCollide = false
+        end
+    end
+end)
+
+-- ==================== GUI ====================
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "AutoBaseRunner"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.IgnoreGuiInset = true
+ScreenGui.DisplayOrder = 99999
+ScreenGui.Parent = getGuiParent()
+
+local Main = Instance.new("Frame")
+Main.Size = UDim2.new(0, 250, 0, 285)
+Main.Position = UDim2.new(0, 30, 0, 110)
+Main.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
+Main.BackgroundTransparency = 0.25
+Main.BorderSizePixel = 0
+Main.Active = true
+Main.Parent = ScreenGui
+Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 10)
+local ms = Instance.new("UIStroke", Main)
+ms.Color = Color3.fromRGB(80, 80, 100)
+ms.Transparency = 0.4
+
+local Header = Instance.new("Frame")
+Header.Size = UDim2.new(1, 0, 0, 28)
+Header.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+Header.BackgroundTransparency = 0.3
+Header.BorderSizePixel = 0
+Header.Parent = Main
+Instance.new("UICorner", Header).CornerRadius = UDim.new(0, 10)
+local hFix = Instance.new("Frame", Header)
+hFix.Size = UDim2.new(1, 0, 0, 10)
+hFix.Position = UDim2.new(0, 0, 1, -10)
+hFix.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+hFix.BackgroundTransparency = 0.3
+hFix.BorderSizePixel = 0
+
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, -32, 1, 0)
+Title.Position = UDim2.new(0, 12, 0, 0)
+Title.BackgroundTransparency = 1
+Title.Text = "Auto Base Runner"
+Title.TextColor3 = Color3.fromRGB(220, 220, 235)
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 12
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.Parent = Header
+
+local CloseBtn = Instance.new("TextButton")
+CloseBtn.Size = UDim2.new(0, 20, 0, 20)
+CloseBtn.Position = UDim2.new(1, -26, 0.5, -10)
+CloseBtn.BackgroundColor3 = Color3.fromRGB(200, 70, 70)
+CloseBtn.BackgroundTransparency = 0.3
+CloseBtn.Text = "×"
+CloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+CloseBtn.Font = Enum.Font.GothamBold
+CloseBtn.TextSize = 14
+CloseBtn.BorderSizePixel = 0
+CloseBtn.AutoButtonColor = false
+CloseBtn.Parent = Header
+Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 5)
+CloseBtn.MouseButton1Click:Connect(function()
+    getgenv().AutoBaseRunning = false
+    ScreenGui:Destroy()
+end)
+
+do
+    local dragging, startPos, dragStart
+    Header.InputBegan:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+            dragging = true; dragStart = i.Position; startPos = Main.Position
+        end
+    end)
+    Header.InputEnded:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(i)
+        if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
+            local d = i.Position - dragStart
+            Main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
+        end
+    end)
+end
+
+local Status = Instance.new("TextLabel")
+Status.Size = UDim2.new(1, -20, 0, 38)
+Status.Position = UDim2.new(0, 10, 0, 34)
+Status.BackgroundTransparency = 1
+Status.Text = "Готов"
+Status.TextColor3 = Color3.fromRGB(180, 180, 200)
+Status.Font = Enum.Font.Gotham
+Status.TextSize = 10
+Status.TextXAlignment = Enum.TextXAlignment.Left
+Status.TextYAlignment = Enum.TextYAlignment.Top
+Status.TextWrapped = true
+Status.Parent = Main
+
+local SpeedLabel = Instance.new("TextLabel")
+SpeedLabel.Size = UDim2.new(0, 55, 0, 22)
+SpeedLabel.Position = UDim2.new(0, 10, 0, 76)
+SpeedLabel.BackgroundTransparency = 1
+SpeedLabel.Text = "Скорость:"
+SpeedLabel.TextColor3 = Color3.fromRGB(180, 180, 200)
+SpeedLabel.Font = Enum.Font.GothamSemibold
+SpeedLabel.TextSize = 10
+SpeedLabel.TextXAlignment = Enum.TextXAlignment.Left
+SpeedLabel.Parent = Main
+
+local SpeedBox = Instance.new("TextBox")
+SpeedBox.Size = UDim2.new(0, 50, 0, 22)
+SpeedBox.Position = UDim2.new(0, 68, 0, 76)
+SpeedBox.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+SpeedBox.BackgroundTransparency = 0.2
+SpeedBox.BorderSizePixel = 0
+SpeedBox.Text = tostring(DEFAULT_SPEED)
+SpeedBox.TextColor3 = Color3.fromRGB(230, 230, 240)
+SpeedBox.Font = Enum.Font.Code
+SpeedBox.TextSize = 12
+SpeedBox.ClearTextOnFocus = false
+SpeedBox.Parent = Main
+Instance.new("UICorner", SpeedBox).CornerRadius = UDim.new(0, 6)
+
+local SpeedUnit = Instance.new("TextLabel")
+SpeedUnit.Size = UDim2.new(0, 90, 0, 22)
+SpeedUnit.Position = UDim2.new(0, 122, 0, 76)
+SpeedUnit.BackgroundTransparency = 1
+SpeedUnit.Text = "studs/s"
+SpeedUnit.TextColor3 = Color3.fromRGB(140, 140, 160)
+SpeedUnit.Font = Enum.Font.Gotham
+SpeedUnit.TextSize = 10
+SpeedUnit.TextXAlignment = Enum.TextXAlignment.Left
+SpeedUnit.Parent = Main
+
+SpeedBox:GetPropertyChangedSignal("Text"):Connect(function()
+    local cleaned = SpeedBox.Text:gsub("[^%d%.]", "")
+    if cleaned ~= SpeedBox.Text then SpeedBox.Text = cleaned end
+end)
+
+local DepthLabel = Instance.new("TextLabel")
+DepthLabel.Size = UDim2.new(0, 55, 0, 22)
+DepthLabel.Position = UDim2.new(0, 10, 0, 102)
+DepthLabel.BackgroundTransparency = 1
+DepthLabel.Text = "Глубина:"
+DepthLabel.TextColor3 = Color3.fromRGB(180, 180, 200)
+DepthLabel.Font = Enum.Font.GothamSemibold
+DepthLabel.TextSize = 10
+DepthLabel.TextXAlignment = Enum.TextXAlignment.Left
+DepthLabel.Parent = Main
+
+local DepthBox = Instance.new("TextBox")
+DepthBox.Size = UDim2.new(0, 50, 0, 22)
+DepthBox.Position = UDim2.new(0, 68, 0, 102)
+DepthBox.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+DepthBox.BackgroundTransparency = 0.2
+DepthBox.BorderSizePixel = 0
+DepthBox.Text = tostring(DEFAULT_DEPTH)
+DepthBox.TextColor3 = Color3.fromRGB(230, 230, 240)
+DepthBox.Font = Enum.Font.Code
+DepthBox.TextSize = 12
+DepthBox.ClearTextOnFocus = false
+DepthBox.Parent = Main
+Instance.new("UICorner", DepthBox).CornerRadius = UDim.new(0, 6)
+
+local DepthUnit = Instance.new("TextLabel")
+DepthUnit.Size = UDim2.new(0, 90, 0, 22)
+DepthUnit.Position = UDim2.new(0, 122, 0, 102)
+DepthUnit.BackgroundTransparency = 1
+DepthUnit.Text = "studs вниз"
+DepthUnit.TextColor3 = Color3.fromRGB(140, 140, 160)
+DepthUnit.Font = Enum.Font.Gotham
+DepthUnit.TextSize = 10
+DepthUnit.TextXAlignment = Enum.TextXAlignment.Left
+DepthUnit.Parent = Main
+
+DepthBox:GetPropertyChangedSignal("Text"):Connect(function()
+    local cleaned = DepthBox.Text:gsub("[^%d%.]", "")
+    if cleaned ~= DepthBox.Text then DepthBox.Text = cleaned end
+end)
+
+local StopLabel = Instance.new("TextLabel")
+StopLabel.Size = UDim2.new(0, 70, 0, 22)
+StopLabel.Position = UDim2.new(0, 10, 0, 128)
+StopLabel.BackgroundTransparency = 1
+StopLabel.Text = "Стоп за:"
+StopLabel.TextColor3 = Color3.fromRGB(180, 180, 200)
+StopLabel.Font = Enum.Font.GothamSemibold
+StopLabel.TextSize = 10
+StopLabel.TextXAlignment = Enum.TextXAlignment.Left
+StopLabel.Parent = Main
+
+local StopBox = Instance.new("TextBox")
+StopBox.Size = UDim2.new(0, 50, 0, 22)
+StopBox.Position = UDim2.new(0, 78, 0, 128)
+StopBox.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+StopBox.BackgroundTransparency = 0.2
+StopBox.BorderSizePixel = 0
+StopBox.Text = tostring(ITEM_STOP_DIST)
+StopBox.TextColor3 = Color3.fromRGB(230, 230, 240)
+StopBox.Font = Enum.Font.Code
+StopBox.TextSize = 12
+StopBox.ClearTextOnFocus = false
+StopBox.Parent = Main
+Instance.new("UICorner", StopBox).CornerRadius = UDim.new(0, 6)
+
+local StopUnit = Instance.new("TextLabel")
+StopUnit.Size = UDim2.new(0, 90, 0, 22)
+StopUnit.Position = UDim2.new(0, 132, 0, 128)
+StopUnit.BackgroundTransparency = 1
+StopUnit.Text = "studs → пешком"
+StopUnit.TextColor3 = Color3.fromRGB(140, 140, 160)
+StopUnit.Font = Enum.Font.Gotham
+StopUnit.TextSize = 10
+StopUnit.TextXAlignment = Enum.TextXAlignment.Left
+StopUnit.Parent = Main
+
+StopBox:GetPropertyChangedSignal("Text"):Connect(function()
+    local cleaned = StopBox.Text:gsub("[^%d%.]", "")
+    if cleaned ~= StopBox.Text then StopBox.Text = cleaned end
+end)
+
+local silentEnabled = SILENT_MODE
+local SilentBtn = Instance.new("TextButton")
+SilentBtn.Size = UDim2.new(1, -20, 0, 22)
+SilentBtn.Position = UDim2.new(0, 10, 0, 156)
+SilentBtn.BackgroundColor3 = silentEnabled and Color3.fromRGB(80, 180, 120) or Color3.fromRGB(34, 34, 44)
+SilentBtn.BackgroundTransparency = 0.2
+SilentBtn.Text = (silentEnabled and "✓ " or "  ") .. "Silent mode (под картой)"
+SilentBtn.TextColor3 = silentEnabled and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(150, 150, 170)
+SilentBtn.Font = Enum.Font.GothamSemibold
+SilentBtn.TextSize = 10
+SilentBtn.BorderSizePixel = 0
+SilentBtn.AutoButtonColor = false
+SilentBtn.Parent = Main
+Instance.new("UICorner", SilentBtn).CornerRadius = UDim.new(0, 6)
+
+SilentBtn.MouseButton1Click:Connect(function()
+    silentEnabled = not silentEnabled
+    if silentEnabled then
+        SilentBtn.Text = "✓ Silent mode (под картой)"
+        SilentBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        SilentBtn.BackgroundColor3 = Color3.fromRGB(80, 180, 120)
+    else
+        SilentBtn.Text = "  Silent mode (под картой)"
+        SilentBtn.TextColor3 = Color3.fromRGB(150, 150, 170)
+        SilentBtn.BackgroundColor3 = Color3.fromRGB(34, 34, 44)
+    end
+end)
+
+local InfoLabel = Instance.new("TextLabel")
+InfoLabel.Size = UDim2.new(1, -20, 0, 14)
+InfoLabel.Position = UDim2.new(0, 10, 0, 184)
+InfoLabel.BackgroundTransparency = 1
+InfoLabel.Text = ("Strength: %d"):format(getStrength())
+InfoLabel.TextColor3 = Color3.fromRGB(200, 200, 220)
+InfoLabel.Font = Enum.Font.Code
+InfoLabel.TextSize = 10
+InfoLabel.TextXAlignment = Enum.TextXAlignment.Left
+InfoLabel.Parent = Main
+
+local autoRunning = false
+getgenv().AutoBaseRunning = false
+
+local AutoBtn = Instance.new("TextButton")
+AutoBtn.Size = UDim2.new(1, -20, 0, 42)
+AutoBtn.Position = UDim2.new(0, 10, 0, 204)
+AutoBtn.BackgroundColor3 = Color3.fromRGB(120, 100, 255)
+AutoBtn.BackgroundTransparency = 0.15
+AutoBtn.Text = "▶ AUTO: OFF"
+AutoBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+AutoBtn.Font = Enum.Font.GothamBold
+AutoBtn.TextSize = 14
+AutoBtn.BorderSizePixel = 0
+AutoBtn.AutoButtonColor = false
+AutoBtn.Parent = Main
+Instance.new("UICorner", AutoBtn).CornerRadius = UDim.new(0, 8)
+
+local ManualBtn = Instance.new("TextButton")
+ManualBtn.Size = UDim2.new(1, -20, 0, 28)
+ManualBtn.Position = UDim2.new(0, 10, 0, 252)
+ManualBtn.BackgroundColor3 = Color3.fromRGB(80, 180, 120)
+ManualBtn.BackgroundTransparency = 0.15
+ManualBtn.Text = "⚡ На базу (вручную)"
+ManualBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+ManualBtn.Font = Enum.Font.GothamBold
+ManualBtn.TextSize = 11
+ManualBtn.BorderSizePixel = 0
+ManualBtn.AutoButtonColor = false
+ManualBtn.Parent = Main
+Instance.new("UICorner", ManualBtn).CornerRadius = UDim.new(0, 6)
+
+-- ==================== ЛОГИКА ====================
+local flying = false
+
+local function setStatus(text, color)
+    Status.Text = text
+    Status.TextColor3 = color or Color3.fromRGB(180, 180, 200)
+end
+
+local function getSpeed()
+    local v = tonumber(SpeedBox.Text)
+    if not v or v <= 0 then v = DEFAULT_SPEED end
+    if v > 1000 then v = 1000 end
+    if v < 5 then v = 5 end
+    return v
+end
+
+local function getDepth()
+    local v = tonumber(DepthBox.Text)
+    if not v or v <= 0 then v = DEFAULT_DEPTH end
+    if v > 500 then v = 500 end
+    if v < 10 then v = 10 end
+    return v
+end
+
+local function getStopDist()
+    local v = tonumber(StopBox.Text)
+    if not v or v <= 0 then v = ITEM_STOP_DIST end
+    if v > 50 then v = 50 end
+    if v < 3 then v = 3 end
+    return v
+end
+
+local function getThrowDirection()
+    local cam = workspace.CurrentCamera
+    local look = cam and cam.CFrame.LookVector or Vector3.new(0, 0, -1)
+    local horiz = Vector3.new(look.X, 0, look.Z)
+    if horiz.Magnitude > 0.15 then return horiz.Unit end
+    return Vector3.new(0, 0, -1)
+end
+
+local function zeroVelocity(hrp)
+    if not hrp then return end
+    pcall(function()
+        hrp.Velocity = Vector3.zero
+        hrp.AssemblyLinearVelocity = Vector3.zero
+        hrp.AssemblyAngularVelocity = Vector3.zero
+        hrp.RotVelocity = Vector3.zero
+    end)
+end
+
+-- Плавный полёт по сегменту
+local function flySegment(fromPos, toPos, speed)
+    local hrp = getHRP()
+    if not hrp then return end
+    local dist = (toPos - fromPos).Magnitude
+    if dist < 0.5 then return end
+    local duration = dist / speed
+    if duration < 0.05 then duration = 0.05 end
+    local t0 = os.clock()
+    while os.clock() - t0 < duration do
+        local t = (os.clock() - t0) / duration
+        if t >= 1 then break end
+        local curPos = fromPos:Lerp(toPos, t)
+        pcall(function() hrp.CFrame = CFrame.new(curPos) end)
+        zeroVelocity(hrp)
+        task.wait()
+    end
+    pcall(function() hrp.CFrame = CFrame.new(toPos) end)
+    zeroVelocity(hrp)
+    task.wait(0.05)
+end
+
+-- ============ ПОЛЁТ (только дальний) ============
+local function flyToPos(targetPos, speed, depth, lockCarry, stopDist)
+    if flying then return end
+    local hrp = getHRP()
+    if not hrp then return end
+    flying = true
+
+    local origCarry = LocalPlayer:GetAttribute("IsCarrying")
+    if lockCarry then
+        LocalPlayer:SetAttribute("IsCarrying", true)
+    end
+
+    local lockConn
+    if lockCarry then
+        lockConn = RunService.Heartbeat:Connect(function()
+            LocalPlayer:SetAttribute("IsCarrying", true)
+        end)
+    end
+
+    stopDist = stopDist or 3
+    local startPos = hrp.Position
+    local dir = targetPos - startPos
+    local fullDist = dir.Magnitude
+
+    if fullDist <= stopDist then
+        -- Уже близко — не летим
+        flying = false
+        if lockConn then lockConn:Disconnect() end
+        if lockCarry then
+            LocalPlayer:SetAttribute("IsCarrying", origCarry or false)
+        end
+        return
+    end
+
+    local finalTarget = startPos + dir.Unit * (fullDist - stopDist)
+
+    if silentEnabled then
+        local dropPos = Vector3.new(startPos.X, startPos.Y - depth, startPos.Z)
+        local underTarget = Vector3.new(finalTarget.X, finalTarget.Y - depth, finalTarget.Z)
+        -- Поднимаемся чуть выше земли цели — потом сами упадём
+        local risePos = Vector3.new(finalTarget.X, finalTarget.Y + 5, finalTarget.Z)
+
+        flySegment(startPos, dropPos, speed)
+        flySegment(dropPos, underTarget, speed)
+        flySegment(underTarget, risePos, speed)
+    else
+        local endPos = Vector3.new(finalTarget.X, finalTarget.Y + 5, finalTarget.Z)
+        flySegment(startPos, endPos, speed)
+    end
+
+    -- Финальная заморозка
+    zeroVelocity(hrp)
+
+    if lockConn then lockConn:Disconnect() end
+    if lockCarry then
+        LocalPlayer:SetAttribute("IsCarrying", origCarry or false)
+    end
+
+    flying = false
+    print("[Fly] Прибыл в", hrp.Position)
+end
+
+-- ============ ПЕШКОМ К ЦЕЛИ ============
+local function walkToTarget(targetPos, stopDist, timeout)
+    stopDist = stopDist or 3
+    timeout = timeout or WALK_TIMEOUT
+
+    local hum = getHum()
+    local hrp = getHRP()
+    if not hum or not hrp then return false end
+
+    -- Ждём падения на землю (или пока не зависнем)
+    setStatus("🪂 Падаю на землю...", Color3.fromRGB(200, 180, 120))
+    local landStart = os.clock()
+    while os.clock() - landStart < LAND_WAIT do
+        if not hum.Parent or hum.Health <= 0 then return false end
+        task.wait(0.05)
+    end
+
+    -- Проверяем что стоим (получили коллизию с землёй — Humanoid.FloorMaterial не nil)
+    local floorWait = os.clock()
+    while os.clock() - floorWait < 1.5 do
+        if hum.FloorMaterial ~= Enum.Material.Air then break end
+        if not hum.Parent or hum.Health <= 0 then return false end
+        task.wait(0.05)
+    end
+
+    -- Теперь идём
+    setStatus("🚶 Иду пешком...", Color3.fromRGB(160, 220, 160))
+
+    local oldSpeed = hum.WalkSpeed
+    hum.WalkSpeed = WALK_SPEED
+
+    pcall(function() hum:MoveTo(targetPos) end)
+
+    local t0 = os.clock()
+    local reached = false
+    while os.clock() - t0 < timeout do
+        if not hum.Parent or hum.Health <= 0 then break end
+        local cur = hrp.Position
+        local dx, dz = cur.X - targetPos.X, cur.Z - targetPos.Z
+        local d = math.sqrt(dx*dx + dz*dz)
+        if d < stopDist then
+            reached = true
+            break
+        end
+        task.wait(0.05)
+    end
+
+    -- Стоп
+    pcall(function() hum:MoveTo(hrp.Position) end)
+    task.wait(0.1)
+    hum.WalkSpeed = oldSpeed
+
+    if reached then
+        setStatus("✅ Дошёл", Color3.fromRGB(80, 190, 120))
+    else
+        setStatus("⚠ Не дошёл", Color3.fromRGB(240, 170, 70))
+    end
+    return reached
+end
+
+-- ============ АКТИВАЦИЯ ПРОМПТА ============
+local function activatePrompt(prompt)
+    if not prompt or not prompt.Enabled then return false end
+    local hrp = getHRP()
+    if hrp and prompt.Parent then
+        local pp = prompt.Parent
+        local tp
+        if pp:IsA("BasePart") then tp = pp.Position
+        elseif pp:IsA("Model") then
+            local ok, p = pcall(function() return pp:GetPivot().Position end)
+            if ok then tp = p end
+        end
+        if tp then
+            local look = CFrame.lookAt(hrp.Position, Vector3.new(tp.X, hrp.Position.Y, tp.Z))
+            pcall(function() hrp.CFrame = look end)
+            task.wait(0.15)
+        end
+    end
+
+    local ok1 = pcall(function() prompt:InputHoldBegin() end)
+    if not ok1 then
+        print("[Auto] InputHoldBegin упал")
+        return false
+    end
+    local dur = prompt.HoldDuration or 0
+    if dur > 0 then
+        task.wait(dur + 0.1)
+    else
+        task.wait(0.15)
+    end
+    pcall(function() prompt:InputHoldEnd() end)
+    return true
+end
+
+-- ==================== ОСНОВНОЙ ЦИКЛ ====================
+local function runAutoLoop()
+    print("[Auto] Старт цикла")
+    while getgenv().AutoBaseRunning do
+        local items = scanItems()
+        InfoLabel.Text = ("Strength: %d | Items: %d"):format(getStrength(), #items)
+
+        if #items == 0 then
+            setStatus("⏳ Нет подходящих", Color3.fromRGB(240, 170, 70))
+            task.wait(1)
+            continue
+        end
+
+        table.sort(items, function(a, b) return a.dist < b.dist end)
+        local pick = items[1]
+
+        setStatus(("1/4 → %s (w=%s)"):format(pick.model.Name, tostring(pick.weight)), Color3.fromRGB(255, 200, 80))
+        print(("[Auto] Цель: %s w=%s d=%.1f"):format(pick.model.Name, tostring(pick.weight), pick.dist))
+
+        -- 1. ЛЕТИМ (только дальний полёт, стоп за N studs)
+        flyToPos(pick.pos, getSpeed(), getDepth(), false, getStopDist())
+
+        if not getgenv().AutoBaseRunning then break end
+        task.wait(0.2)
+
+        -- 2. ИДЁМ ПЕШКОМ до предмета
+        setStatus("2/4 Иду к предмету...", Color3.fromRGB(160, 220, 160))
+        walkToTarget(pick.pos, 3, WALK_TIMEOUT)
+        task.wait(0.3)
+
+        if not pick.model.Parent then
+            setStatus("⚠ Исчез", Color3.fromRGB(240, 170, 70))
+            task.wait(0.3)
+            continue
+        end
+
+        -- 3. ПОДБИРАЕМ
+        local prompt = findPickupPrompt(pick.model)
+        if not prompt then
+            setStatus("❌ Нет PickupPrompt", Color3.fromRGB(230, 90, 90))
+            task.wait(0.5)
+            continue
+        end
+
+        setStatus("3/4 Подбираю...", Color3.fromRGB(160, 200, 240))
+        activatePrompt(prompt)
+        task.wait(0.6)
+
+        if not isCarrying() then
+            setStatus("⚠ Не подобрал", Color3.fromRGB(240, 170, 70))
+            task.wait(0.5)
+            continue
+        end
+
+        -- 4. ЛЕТИМ НА БАЗУ + БРОСОК
+        local base = findMyBase()
+        if not base then
+            setStatus("❌ Нет базы", Color3.fromRGB(230, 90, 90))
+            task.wait(1)
+            continue
+        end
+        local hole = findHoleHitbox(base)
+        if not hole then
+            setStatus("❌ Нет HoleHitbox", Color3.fromRGB(230, 90, 90))
+            task.wait(1)
+            continue
+        end
+
+        setStatus("4/4 На базу + бросок...", Color3.fromRGB(160, 240, 160))
+        flyToPos(hole.Position, getSpeed(), getDepth(), true, BASE_STOP_DIST)
+
+        if not getgenv().AutoBaseRunning then break end
+        task.wait(0.5)
+
+        if ThrowItem and isCarrying() then
+            local dir = getThrowDirection()
+            pcall(function() ThrowItem:FireServer(dir) end)
+            print(("[Auto] Бросок: %.2f, %.2f, %.2f"):format(dir.X, dir.Y, dir.Z))
+            setStatus("🎯 Брошено!", Color3.fromRGB(80, 190, 120))
+            task.wait(0.5)
+        else
+            setStatus("⚠ Нечего бросать", Color3.fromRGB(240, 170, 70))
+            task.wait(0.5)
+        end
+
+        task.wait(AUTO_DELAY)
+    end
+    setStatus("⏹ Стоп", Color3.fromRGB(150, 150, 170))
+    print("[Auto] Цикл завершён")
+end
+
+AutoBtn.MouseButton1Click:Connect(function()
+    if autoRunning then
+        autoRunning = false
+        getgenv().AutoBaseRunning = false
+        AutoBtn.Text = "▶ AUTO: OFF"
+        AutoBtn.BackgroundColor3 = Color3.fromRGB(120, 100, 255)
+        setStatus("⏹ Остановлено", Color3.fromRGB(150, 150, 170))
+    else
+        autoRunning = true
+        getgenv().AutoBaseRunning = true
+        AutoBtn.Text = "⏸ AUTO: ON"
+        AutoBtn.BackgroundColor3 = Color3.fromRGB(240, 100, 100)
+        setStatus("🚀 Запуск...", Color3.fromRGB(80, 190, 120))
+        task.spawn(runAutoLoop)
+    end
+end)
+
+ManualBtn.MouseButton1Click:Connect(function()
+    if flying then return end
+    task.spawn(function()
+        local base = findMyBase()
+        if not base then
+            setStatus("❌ База не найдена", Color3.fromRGB(230, 90, 90))
+            return
+        end
+        local hole = findHoleHitbox(base)
+        if not hole then
+            setStatus("❌ HoleHitbox нет", Color3.fromRGB(230, 90, 90))
+            return
+        end
+        setStatus("⚡ На базу...", Color3.fromRGB(255, 200, 80))
+        flyToPos(hole.Position, getSpeed(), getDepth(), isCarrying(), BASE_STOP_DIST)
+        task.wait(0.5)
+        if ThrowItem and isCarrying() then
+            local dir = getThrowDirection()
+            pcall(function() ThrowItem:FireServer(dir) end)
+            setStatus("🎯 Брошено", Color3.fromRGB(80, 190, 120))
+        else
+            setStatus("✅ Прибыл", Color3.fromRGB(80, 190, 120))
+        end
+    end)
+end)
+
+task.spawn(function()
+    while ScreenGui.Parent do
+        task.wait(1)
+        local s = getStrength()
+        local items = scanItems()
+        InfoLabel.Text = ("Strength: %d | Items: %d"):format(s, #items)
+    end
+end)
+
+print("[Auto Base Runner — Walk on Arrival] Загружено")
